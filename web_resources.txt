@@ -1,0 +1,2 @@
+Use PyQt0s QThreads to Prevent Freezing GUIs
+https://realpython.com/python-pyqt-qthread/
