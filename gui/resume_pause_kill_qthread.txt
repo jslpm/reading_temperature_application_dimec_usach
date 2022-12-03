@@ -1,0 +1,1 @@
+https://www.pythonguis.com/faq/pause-a-running-worker-thread/?u=martin

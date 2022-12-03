@@ -51,7 +51,7 @@ class MainWindow(QMainWindow):
 
         # Use QtTimer
         self.timer = QtCore.QTimer()
-        self.timer.setInterval(50)  # every 50ms
+        self.timer.setInterval(100)  # every 50ms
         self.timer.timeout.connect(self.update_plot_data)
         self.timer.start()
 

@@ -25,7 +25,7 @@ class Window(QMainWindow):
         self.setupUI()
 
     def setupUI(self):
-        self.setWindowTitle('Freezing GUI')
+        self.setWindowTitle('Responsive GUI')
         self.resize(300, 150)
         self.centralWidget = QWidget()
         self.setCentralWidget(self.centralWidget)

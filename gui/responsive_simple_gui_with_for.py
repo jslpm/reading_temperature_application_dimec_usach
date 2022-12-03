@@ -1,10 +1,27 @@
 import nidaqmx
 import sys
+import time
 
+from PyQt5.QtCore import Qt, QObject, QThread, pyqtSignal
 from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QPushButton, QLineEdit,
     QFormLayout, QHBoxLayout, QMessageBox)
-from PyQt5.QtGui import QFont
-from PyQt5.QtCore import Qt
+
+# Step 1: Creat a worker class
+class Worker(QObject):
+    finished = pyqtSignal()
+    progress = pyqtSignal(int, float)
+
+    def __init__(self, daq):
+        super().__init__()
+        self.daq = daq
+
+    def run(self):
+        """Reading task."""
+        for i in range(10):
+            measurement = self.daq.read()
+            self.progress.emit(i+1, measurement)
+            time.sleep(1)
+        self.finished.emit()
 
 class DAQApp(QWidget):
 
@@ -36,7 +53,7 @@ class DAQApp(QWidget):
 
         self.read_button = QPushButton('Read value')
         self.read_button.setEnabled(False)
-        self.read_button.clicked.connect(self.read_value)
+        self.read_button.clicked.connect(self.runReadingTask)
 
         self.data_label = QLabel()
         
@@ -57,7 +74,7 @@ class DAQApp(QWidget):
                 units=nidaqmx.constants.TemperatureUnits.DEG_C,
                 thermocouple_type=nidaqmx.constants.ThermocoupleType.K
             )
-            self.task.timing.cfg_samp_clk_timing(1)
+            self.task.timing.cfg_samp_clk_timing(2)
         except:
             #raise Exception("Cannot create task for accesing DAQ. Check DAQ connection.")
             self.daq_status_label.setText('Connot connect to DAQ!')
@@ -66,10 +83,6 @@ class DAQApp(QWidget):
             self.daq_status_label.setText('Connected to DAQ')
             self.connect_button.setEnabled(False)
             self.read_button.setEnabled(True)
-
-    def read_value(self):
-        measurement = self.task.read()
-        self.data_label.setText(str(measurement))
 
     def closeEvent(self, event):
         close_question = QMessageBox.question(
@@ -89,8 +102,35 @@ class DAQApp(QWidget):
             event.accept()
         else:
             event.ignore()
-        
 
+    def reportProgress(self, count, measurement):
+        self.data_label.setText(f'count {count}: {str(measurement)}')
+    
+        
+    def runReadingTask(self):
+        # Step 2: Create a QThreaded object
+        self.thread = QThread()
+
+        # Step 3: Create a worker object
+        self.worker = Worker(self.task)
+
+        # Step 4: Move worke to the thread
+        self.worker.moveToThread(self.thread)
+
+        # Step 5 Connect signals and slots
+        self.thread.started.connect(self.worker.run)
+        self.worker.finished.connect(self.thread.quit)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.thread.finished.connect(self.thread.deleteLater)
+        self.worker.progress.connect(self.reportProgress)
+        
+        # Step 6: Start thread
+        self.thread.start()
+
+        # Step 7: Final resets
+        self.read_button.setEnabled(False)
+        self.thread.finished.connect(lambda: self.read_button.setEnabled(True))
+        
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

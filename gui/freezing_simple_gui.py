@@ -68,8 +68,9 @@ class DAQApp(QWidget):
             self.read_button.setEnabled(True)
 
     def read_value(self):
-        measurement = self.task.read()
-        self.data_label.setText(str(measurement))
+        for i in range(5):
+            measurement = self.task.read()
+            self.data_label.setText(f'count {i+1}: {str(measurement)}')
 
     def closeEvent(self, event):
         close_question = QMessageBox.question(
