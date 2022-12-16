@@ -58,8 +58,8 @@ class DAQApp(QWidget):
 
         device_label = QLabel('Device:')
 
-        device_name = QLineEdit()
-        device_name.setText('cDAQ1Mod1/ai0')
+        self.device_name = QLineEdit()
+        self.device_name.setText('cDAQ1Mod1/ai0')
         
         self.connect_button = QPushButton('Connect')
         self.connect_button.clicked.connect(self.connectDAQ)
@@ -82,7 +82,7 @@ class DAQApp(QWidget):
 
         device_layout = QHBoxLayout()
         device_layout.addWidget(device_label)
-        device_layout.addWidget(device_name)
+        device_layout.addWidget(self.device_name)
 
         buttons_layout = QHBoxLayout()
         buttons_layout.addWidget(self.read_button)
@@ -98,9 +98,10 @@ class DAQApp(QWidget):
 
     def connectDAQ(self):
         try:
+            device = self.device_name.text()
             self.task = nidaqmx.Task()
             self.task.ai_channels.add_ai_thrmcpl_chan(
-                'cDAQ1Mod1/ai0', 
+                device, 
                 units=nidaqmx.constants.TemperatureUnits.DEG_C,
                 thermocouple_type=nidaqmx.constants.ThermocoupleType.K
             )
