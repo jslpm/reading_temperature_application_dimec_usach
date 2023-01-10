@@ -1,0 +1,5 @@
+How to create a icon to execute a script?
+https://askubuntu.com/questions/1208957/how-to-create-a-icon-to-execute-a-script
+
+How do you create a custom application launcher in Gnome Shell?
+https://askubuntu.com/questions/1208957/how-to-create-a-icon-to-execute-a-script

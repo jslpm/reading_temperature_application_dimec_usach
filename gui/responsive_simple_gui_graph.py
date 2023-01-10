@@ -235,6 +235,7 @@ class DAQApp(QWidget):
         self.y.append(y)
         
         self.graph_widget.plot(self.x, self.y, pen=self.line_style, symbol='+')
+        self.data_label.setText(f'x: {self.x[-1]} y: {self.y[-1]}')
 
     def saveDataToFile(self):
         print('saving data to file ...')

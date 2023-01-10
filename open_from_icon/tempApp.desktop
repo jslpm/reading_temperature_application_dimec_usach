@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Encoding=UTF-8
+Name="Temperature Application"
+Comment="Simple temperature reader applicacion"
+Exec=~/Downloads/reading_temperature_application_dimec_usach/open_from_icon/init.bash
+#Icon=/path/to/eclipse/icon
+Type=Application
+Categories=Science
+Terminal=false
