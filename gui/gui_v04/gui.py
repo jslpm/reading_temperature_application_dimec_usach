@@ -1,6 +1,7 @@
 # gui.py
 # Features added:
-# - Update button for showing connected device
+# - Update button for showing connected devices
+# - Generate channel options by thermocouple type
 # TODO:
 # - Generate multiple instances of workers for multiplot
 # - Separate worker objecto into a new file
@@ -36,44 +37,26 @@ from PyQt5.QtWidgets import (
     QGroupBox,
     QCheckBox,
     QScrollArea,
+    QGridLayout
 )
-
 from PyQt5.QtGui import QPen, QColor, QPalette
-
-# Step 1: Creat a worker class
-class Worker(QObject):
-    finished = pyqtSignal()
-    progress = pyqtSignal(int, float)
-
-    def __init__(self, daq):
-        super().__init__()
-        self.daq = daq
-        self.is_running = False
-        self.time = 0
-
-    def run(self):
-        """Reading task."""
-        if not self.is_running:
-            self.is_running = True
-
-        while self.is_running == True:   
-                measurement = self.daq.read()
-                self.progress.emit(self.time, measurement)
-                self.time += 1
-                time.sleep(1)
-        self.finished.emit()
-    
-    def stop(self):
-        self.is_running = False
-        self.time = 0
-        print('worker finished')
+from Worker import Worker
 
 class DAQApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
         self.is_reading = False
-        self.thermocouple_types = ['-', 'J', 'K', 'T']
+        self.is_first_execution = True
+        self.thermocouple_types = ['J', 'K', 'T']
+        self.container_channels = []
+        self.container_thc_types = []
+        self.task_list = []
+        self.graph_widget = []
+        self.xs = []
+        self.ys = []
+        self.threads = []
+        self.workers = []
         self.initializeUI()
 
     def initializeUI(self):
@@ -108,6 +91,7 @@ class DAQApp(QMainWindow):
 
         # Widgets
         device_label = QLabel('NI-DAQ device')
+        device_label.setFixedWidth(100)
         device_label.setStatusTip('Select device for measurement')
 
         self.device_name_cb = QComboBox()
@@ -118,12 +102,11 @@ class DAQApp(QMainWindow):
         self.update_device_button.clicked.connect(self.updateDevice)
         self.update_device_button.setStatusTip('Update list of connected devices')
         
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
 
-        self.channels_group = QGroupBox('Channels')
-        self.thc_type_group = QGroupBox('Thermocouple type')
-        self.ch_thc_group = QGroupBox()
+        self.channels_group = QGroupBox()
+        self.channels_group.setStatusTip('Select channels and thermocouple types')
         
         self.connect_button = QPushButton('Connect')
         self.connect_button.setEnabled(False)
@@ -151,33 +134,32 @@ class DAQApp(QMainWindow):
         self.data_label = QLabel()
 
         # Create form layout
-        self.app_form_layout = QVBoxLayout()
+        self.app_form_layout = QHBoxLayout()
 
         device_layout = QHBoxLayout()
         device_layout.addWidget(device_label)
         device_layout.addWidget(self.device_name_cb)
         device_layout.addWidget(self.update_device_button)
 
-        channels_layout = QHBoxLayout()
-        channels_layout.addWidget(self.channels_group)
-        channels_layout.addWidget(self.thc_type_group)
+        self.channels_layout = QGridLayout()
+        self.channels_group.setLayout(self.channels_layout)
 
-        self.ch_thc_group.setLayout(channels_layout)
-        self.ch_thc_group.setFlat(True)
-        scroll_area.setWidget(self.ch_thc_group)
-
+        self.scroll_area.setWidget(self.channels_group)
+        
         buttons_layout = QHBoxLayout()
         buttons_layout.addWidget(self.read_button)
         buttons_layout.addWidget(self.stop_button)
         buttons_layout.addWidget(self.save_button)
 
-        self.app_form_layout.addLayout(device_layout)
-        # self.app_form_layout.addLayout(channels_layout)
-        self.app_form_layout.addWidget(scroll_area)
-        self.app_form_layout.addWidget(self.connect_button)
-        self.app_form_layout.addLayout(buttons_layout)
-        self.app_form_layout.addStretch()
+        self.controls_layout = QVBoxLayout()
+
+        self.controls_layout.addLayout(device_layout)
+        self.controls_layout.addWidget(self.scroll_area)
+        self.controls_layout.addWidget(self.connect_button)
+        self.controls_layout.addLayout(buttons_layout)
         
+        self.app_form_layout.addLayout(self.controls_layout)
+
         # self.setLayout(app_form_layout)
         self.widgetContainer.setLayout(self.app_form_layout)
 
@@ -187,41 +169,54 @@ class DAQApp(QMainWindow):
         """
         # Get device name enter by user (example: cDAQ1Mod1/ai0)
         device_entered = self.device_name_cb.currentText()
-        first_channel = self.channels_from_cb.currentText()
-        last_channel = self.channels_to_cb.currentText()
 
-        # Create Task            self.graph_widget[0].setStatusTip(f'Data from channel {ch1}') for DAQ (connexion)
-        try:
-            self.task = nidaqmx.Task()
-            self.task.ai_channels.add_ai_thrmcpl_chan(
-                device_entered + '/' + 'ai' + first_channel + ':' + last_channel,
-                units=nidaqmx.constants.TemperatureUnits.DEG_C,
-                thermocouple_type=nidaqmx.constants.ThermocoupleType.K
-            )
-            self.task.timing.cfg_samp_clk_timing(2) # Sample time in hz
-        except:
-            # raise Exception("Cannot create task for accesing DAQ. Check DAQ connection.")
-            # self.daq_status_label.setText('Connot connect to DAQ!')
-            QMessageBox.critical(self, 'Error', 'Cannot connect to NI-DAQ!', QMessageBox.Ok, QMessageBox.Ok)
-        else:
+        # Iterate through device channels
+        for i, item in enumerate(zip(self.container_channels, self.container_thc_types)):
+            # Check for selected channels
+            ch = item[0]
+            thc_type = item[1].currentText()
+            
+            if ch.isChecked():
+                ch_fullname = device_entered + '/' + ch.text()
+                # Create Task
+                try:
+                    task = nidaqmx.Task()
+                    task.ai_channels.add_ai_thrmcpl_chan(
+                    ch_fullname,
+                    units=nidaqmx.constants.TemperatureUnits.DEG_C,
+                    thermocouple_type=self.to_thc_ni_constant(thc_type)
+                    )
+                except:
+                    print('Cannot connect to DAQ.')
+                    # raise Exception(f'Cannot generate task for channel {ch_name}.')
+                    self.daq_status_label.setText('Connot connect to DAQ!')
+                    QMessageBox.critical(self, 'Error', 'Cannot connect to NI-DAQ!', QMessageBox.Ok, QMessageBox.Ok)
+                else:
+                    # Set sample time in hz
+                    task.timing.cfg_samp_clk_timing(2)
+                    # Append task to list
+                    self.task_list.append([ch.text(), thc_type, task])
+
+        if self.task_list:
+            # Show successful connection messages
             print('Connected to DAQ.')
-            self.daq_status_label.setText('Connected to DAQ')
+            # self.daq_status_label.setText('Connected to DAQ')
             QMessageBox.information(self, 'NI-DAQ connection', 'NI-DAQ is now connected', QMessageBox.Ok, QMessageBox.Ok)
             self.statusBar.showMessage('NI-DAQ connected')
             self.connect_button.setEnabled(False)
             self.read_button.setEnabled(True)
-
+ 
             # Create graphs
-            # self.generateGraphTabs(first_channel, last_channel)
+            self.generateGraphTabs(self.task_list)
 
-    def createGraphWidget(self, ch):
+    def createGraphWidget(self, ch, thc):
         """
         Creates a configured graph widget.
         """
         # Graph widget
         graph_widget = pyqtgraph.PlotWidget()
         graph_widget.setBackground('w')
-        graph_widget.setTitle(f'Channel {ch}', color='k')
+        graph_widget.setTitle(f'Channel {ch}, {thc}-type', color='k')
         graph_widget.setLabel('bottom', 'time [s]', color='k')
         graph_widget.setLabel('left', 'temperature [deg]', color='k')
         graph_widget.showGrid(x=True, y=True)
@@ -230,29 +225,24 @@ class DAQApp(QMainWindow):
         
         return graph_widget
 
-    def generateGraphTabs(self, ch1, ch2=None):
+    def generateGraphTabs(self, task_list):
         """
-        reate graph widget separated by tabs.
+        Create graph widget separated by tabs.
         """
         # Create list for collect graph widgets
         self.graph_widget = []
 
         # Check if one o more channels are specified
-        if ch2 == None:
-            self.graph_widget.append(self.createGraphWidget(ch1))
-            self.tab_bar.addTab(self.graph_widget[0], f'ch{ch1}')
-        else:
-            list_channels = list(range(ch1, ch2+1))
-            for ch in list_channels:
-                new_graph_widget = self.createGraphWidget(ch)
-                self.graph_widget.append(new_graph_widget)
-                self.tab_bar.addTab(new_graph_widget, 'ch' + str(ch))
+        for item in task_list:
+            new_graph_widget = self.createGraphWidget(item[0], item[1])
+            self.graph_widget.append(new_graph_widget)
+            self.tab_bar.addTab(new_graph_widget, item[0])
 
         # Add tab bar main windows
         self.app_form_layout.addWidget(self.tab_bar)
 
         # Set minimum width and height of the window
-        self.setMinimumWidth(400)
+        self.setMinimumWidth(800)
         self.setMinimumHeight(400)
 
     def closeEvent(self, event):
@@ -298,54 +288,62 @@ class DAQApp(QMainWindow):
         # Accept event and close
         print('Program finished')
 
-    def reportProgress(self, time, measurement):
+    def reportProgress(self, ch, time, measurement):
         # User to update measure value
-        msg = f'x: {time} y: {str(measurement)}'
+        msg = f'ch: {ch} x: {time} y: {str(measurement)}'
         #self.data_label.setText(msg)
         print(msg)
         self.addData(time, measurement)
         
     def runReadingTask(self):
-        # Clear graph
-        self.graph_widget.clear()
-        self.x = []
-        self.y = []
+        # Clear list variables
+        self.xs = []
+        self.ys = []
+        self.threads = []
+        self.workers = []
 
-        # Step 2: Create a QThreaded object
-        self.thread = QThread()
+        # Step 2: Create QThreaded object list
+        for task in self.task_list:
+            
+            # Step 3: Create a worker object
+            worker = Worker(task)
+            
+            # Step 4: Move worker to the thread
+            thread = QThread()
+            worker.moveToThread(thread)
+            
+            # Step 5 Connect signals and slots
+            thread.started.connect(worker.run)
+            thread.finished.connect(thread.deleteLater)
+            worker.progress.connect(self.reportProgress)
+            worker.finished.connect(thread.quit)
+            worker.finished.connect(worker.deleteLater)
+            
+            # Step 6: Start thread
+            thread.start()
 
-        # Step 3: Create a worker object
-        self.worker = Worker(self.task)
-        
-        # Step 4: Move worke to the thread
-        self.worker.moveToThread(self.thread)
-        
-        # Step 5 Connect signals and slots
-        self.thread.started.connect(self.worker.run)
-        self.thread.finished.connect(self.thread.deleteLater)
-        self.worker.progress.connect(self.reportProgress)
-        self.worker.finished.connect(self.thread.quit)
-        self.worker.finished.connect(self.worker.deleteLater)
-        
-        # Step 6: Start threadresponsive_simple_gui_read_continuous_and_exit copy
-        self.thread.start()
-        
-        # Step 7: Final resets
-        self.read_button.setEnabled(False)
-        self.stop_button.setEnabled(True)
-        self.save_button.setEnabled(False)
-        self.thread.finished.connect(lambda: self.read_button.setEnabled(True))
-        self.thread.finished.connect(lambda: self.stop_button.setEnabled(False))
-        self.thread.finished.connect(lambda: self.save_button.setEnabled(True))
+            # Step 7: Final resets
+            self.read_button.setEnabled(False)
+            self.stop_button.setEnabled(True)
+            self.save_button.setEnabled(False)
+            thread.finished.connect(lambda: self.read_button.setEnabled(True))
+            thread.finished.connect(lambda: self.stop_button.setEnabled(False))
+            thread.finished.connect(lambda: self.save_button.setEnabled(True))
+
+            x = []
+            y = []
+
+            # Collect threads into list
+            self.workers.append(worker)
 
     def stopReadingTask(self):
-        self.worker.stop()
+        for worker in self.workers:
+            worker.deleteLater()
 
     def addData(self, x, y):
         #print('adding data')
         self.x.append(x)
         self.y.append(y)
-        
         self.graph_widget.plot(self.x, self.y, pen=self.line_style, symbol='+')
 
     def saveDataToFile(self):
@@ -414,25 +412,83 @@ class DAQApp(QMainWindow):
         """
         # Get a list of available channels from connected device
         ch_idx = [channel.name[channel.name.index('/')+1:] for channel in channels]
+        # print(ch_idx)
+
         # Check if device has available channels
         if ch_idx:
-            print('Generate channel widgets')
-            channels_layout = QVBoxLayout()
-            thc_types_layout = QVBoxLayout()
+            # print('Generate channel widgets')
+            
             for idx in ch_idx:
-                channels_layout.addWidget(QCheckBox(idx))
-                
+                # Create row position
+                row = int(idx[2:])
+                # Create checkbox channel widget
+                channel_ckb = QCheckBox(idx)
+                channel_ckb.setMaximumWidth(50)
+                # Create thermocouple type combobox
                 thc_types_cb = QComboBox()
                 thc_types_cb.addItems(self.thermocouple_types)
-                thc_types_layout.addWidget(thc_types_cb)
+                thc_types_cb.setMaximumWidth(50)
+                # Append widget to list for getting states
+                self.container_channels.append(channel_ckb)
+                self.container_thc_types.append(thc_types_cb)
+                # Add widget to grid layout
+                self.channels_layout.addWidget(channel_ckb, row, 0)
+                self.channels_layout.addWidget(thc_types_cb, row, 1)
             
-            self.channels_group.setLayout(channels_layout)
-            self.thc_type_group.setLayout(thc_types_layout)
             self.connect_button.setEnabled(True)
-        else:
-            print('Clear channel widgets')
-            self.connect_button.setEnabled(False)
+            self.is_first_execution = False
 
+        elif not ch_idx and self.is_first_execution == False:
+            # print('Clear channel widgets')
+            # Get number of rows and columns from grid layout
+            rows = self.channels_layout.rowCount()
+            cols = self.channels_layout.columnCount()
+            # Iterate through grid layout to get widget and remove them
+            #https://stackoverflow.com/questions/13184250/is-there-any-way-to-remove-a-qwidget-in-a-qgridlayout
+            for r in range(rows):
+                for c in range(cols):
+                    widget_to_remove = self.channels_layout.itemAtPosition(r, c).widget()
+                    self.channels_layout.removeWidget(widget_to_remove)
+                    # print(r, c, widget_to_remove)
+            
+            # Delete all reference to channels checkbox
+            for item in self.container_channels:
+                item.deleteLater()
+
+            # Delete all reference to thermocouple types combobox
+            for item in self.container_thc_types:
+                item.deleteLater()
+
+            # Clear container lists
+            self.container_channels = []
+            self.container_thc_types = []
+
+            # Clear tab bar with graphs
+            num_tabs = self.tab_bar.count()
+            for i in reversed(range(num_tabs)):
+                self.tab_bar.removeTab(i)
+            self.graph_widget = []
+
+            # Clear task_list
+            self.task_list = []
+            
+            # Deactivate button for connecting to device
+            self.connect_button.setEnabled(False)
+            self.read_button.setEnabled(False)
+
+    def to_thc_ni_constant(self, thc_type):
+        """
+        Convert thermocouple type string (str) to
+        ni constant.
+        """
+        if thc_type == 'J':
+            return nidaqmx.constants.ThermocoupleType.J
+        elif thc_type == 'K':
+            return nidaqmx.constants.ThermocoupleType.K
+        elif thc_type == 'T':
+            return nidaqmx.constants.ThermocoupleType.T
+        else:
+            raise Exception('Unknown thermocouple type option.')
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
