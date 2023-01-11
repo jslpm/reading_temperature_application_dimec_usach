@@ -187,8 +187,8 @@ class DAQApp(QMainWindow):
         # Get device name enter by user (example: cDAQ1Mod1/ai0)
         device_entered = self.device_name_cb.currentText()
 
-        for item in self.container_channels:
-            print(item)
+        for i, item in enumerate(zip(self.container_channels, self.container_thc_types)):
+            print(i, item[0].isChecked(), item[1].currentText())
 
         # Create Task            self.graph_widget[0].setStatusTip(f'Data from channel {ch1}') for DAQ (connexion)
         # try:
