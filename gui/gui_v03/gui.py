@@ -74,10 +74,11 @@ class DAQApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.is_reading = False
-        self.is_fisrt_execution = True
+        self.is_first_execution = True
         self.thermocouple_types = ['J', 'K', 'T']
         self.container_channels = []
         self.container_thc_types = []
+        self.task_list = []
         self.initializeUI()
 
     def initializeUI(self):
@@ -438,9 +439,9 @@ class DAQApp(QMainWindow):
                 self.channels_layout.addWidget(thc_types_cb, row, 1)
             
             self.connect_button.setEnabled(True)
-            self.is_fisrt_execution = False
+            self.is_first_execution = False
 
-        elif not ch_idx and self.is_fisrt_execution == False:
+        elif not ch_idx and self.is_first_execution == False:
             # print('Clear channel widgets')
             # Get number of rows and columns from grid layout
             rows = self.channels_layout.rowCount()
