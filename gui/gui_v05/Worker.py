@@ -7,12 +7,11 @@ import time
 # Step 1: Creat a worker class
 class Worker(QObject):
     finished = pyqtSignal()
-    progress = pyqtSignal(str, int, float)
+    progress = pyqtSignal(int, list)
 
     def __init__(self, task):
         super().__init__()
-        self.chn = task[0]
-        self.task = task[2]
+        self.task = task
         self.is_running = False
         self.time = 0
 
@@ -22,8 +21,8 @@ class Worker(QObject):
             self.is_running = True
 
         while self.is_running == True:
-            measurement = self.task.read()
-            self.progress.emit(self.chn, self.time, measurement)
+            measurements = self.task.read()
+            self.progress.emit(self.time, measurements)
             self.time += 1
             time.sleep(1)
         self.finished.emit()
@@ -31,4 +30,4 @@ class Worker(QObject):
     def stop(self):
         self.is_running = False
         self.time = 0
-        print(f'Worker finished for {self.chn}')
+        print(f'Worker finished')

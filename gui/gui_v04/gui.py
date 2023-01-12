@@ -68,10 +68,6 @@ class DAQApp(QMainWindow):
         self.setWindowTitle('DAQ Application')
         self.mainForm()
 
-        # To store data from sensor
-        self.x = []
-        self.y = []
-
     def mainForm(self):
         """
         Create widgets that will be used in the application form.
@@ -193,7 +189,7 @@ class DAQApp(QMainWindow):
                     QMessageBox.critical(self, 'Error', 'Cannot connect to NI-DAQ!', QMessageBox.Ok, QMessageBox.Ok)
                 else:
                     # Set sample time in hz
-                    task.timing.cfg_samp_clk_timing(2)
+                    # task.timing.cfg_samp_clk_timing(2)
                     # Append task to list
                     self.task_list.append([ch.text(), thc_type, task])
 
@@ -205,7 +201,7 @@ class DAQApp(QMainWindow):
             self.statusBar.showMessage('NI-DAQ connected')
             self.connect_button.setEnabled(False)
             self.read_button.setEnabled(True)
- 
+
             # Create graphs
             self.generateGraphTabs(self.task_list)
 
@@ -231,11 +227,13 @@ class DAQApp(QMainWindow):
         """
         # Create list for collect graph widgets
         self.graph_widget = []
+        self.graph_widget = dict()
 
         # Check if one o more channels are specified
         for item in task_list:
             new_graph_widget = self.createGraphWidget(item[0], item[1])
-            self.graph_widget.append(new_graph_widget)
+            graph_data = [new_graph_widget, [], []]
+            self.graph_widget[item[0]] = graph_data
             self.tab_bar.addTab(new_graph_widget, item[0])
 
         # Add tab bar main windows
@@ -293,12 +291,19 @@ class DAQApp(QMainWindow):
         msg = f'ch: {ch} x: {time} y: {str(measurement)}'
         #self.data_label.setText(msg)
         print(msg)
-        self.addData(time, measurement)
+        #print('adding data')
+        # Append value to x
+        self.graph_widget[ch][1].append(time)
+        self.graph_widget[ch][2].append(measurement)
+
+        x = self.graph_widget[ch][1]
+        y = self.graph_widget[ch][2]
+
+        self.line_style = pyqtgraph.mkPen(color='b', w=4.5)
+        self.graph_widget[ch][0].plot(x, y, pen=self.line_style, symbol='+')
         
     def runReadingTask(self):
         # Clear list variables
-        self.xs = []
-        self.ys = []
         self.threads = []
         self.workers = []
 
@@ -318,33 +323,36 @@ class DAQApp(QMainWindow):
             worker.progress.connect(self.reportProgress)
             worker.finished.connect(thread.quit)
             worker.finished.connect(worker.deleteLater)
-            
-            # Step 6: Start thread
-            thread.start()
 
-            # Step 7: Final resets
-            self.read_button.setEnabled(False)
-            self.stop_button.setEnabled(True)
-            self.save_button.setEnabled(False)
-            thread.finished.connect(lambda: self.read_button.setEnabled(True))
+            # thread.finished.connect(lambda: self.read_button.setEnabled(True))
             thread.finished.connect(lambda: self.stop_button.setEnabled(False))
             thread.finished.connect(lambda: self.save_button.setEnabled(True))
 
-            x = []
-            y = []
-
             # Collect threads into list
             self.workers.append(worker)
+            self.threads.append(thread)
+
+        for thread in self.threads:
+            thread.start()
+            
+        # Step 7: Final resets
+        self.read_button.setEnabled(False)
+        self.stop_button.setEnabled(True)
+        self.save_button.setEnabled(False)
 
     def stopReadingTask(self):
+        # Stop workers
+        for worker in self.workers:
+            worker.stop()
+        # Delete workers
         for worker in self.workers:
             worker.deleteLater()
-
-    def addData(self, x, y):
-        #print('adding data')
-        self.x.append(x)
-        self.y.append(y)
-        self.graph_widget.plot(self.x, self.y, pen=self.line_style, symbol='+')
+        # Quit threads
+        for thread in self.threads:
+            thread.quit()
+        # Close task
+        for task in self.task_list:
+            task[2].close()
 
     def saveDataToFile(self):
         print('saving data to file ...')
